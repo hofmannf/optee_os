@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
+#include <assert.h>
 #include <compiler.h>
 #include <stdbool.h>
 #include <string.h>
@@ -48,12 +49,50 @@ extern struct ta_head ta_head;
 uint32_t ta_param_types;
 TEE_Param ta_params[TEE_NUM_PARAMS];
 
+/* Boundaries of the constructor and destructor lists.
+ * Provided by the linker.
+ */
+typedef void (*fnptr_void)(void);
+extern fnptr_void __init_array_start[];
+extern fnptr_void __init_array_end[];
+extern fnptr_void __fini_array_start[];
+extern fnptr_void __fini_array_end[];
+
+static void call_constructors(void)
+{
+	assert(__init_array_end >= __init_array_start);
+
+	DMSG("Invoking %zu constructor(s).",
+			__init_array_end - __init_array_start);
+
+	for (fnptr_void *ctor = __init_array_start;
+			ctor < __init_array_end;
+			ctor++) {
+		(*ctor)();
+	}
+}
+
+static void call_destructors(void)
+{
+	assert(__fini_array_end >= __fini_array_start);
+
+	DMSG("Invoking %zu destructor(s).",
+			__fini_array_end - __fini_array_start);
+
+	for (fnptr_void *dtor = __fini_array_start;
+			dtor < __fini_array_end;
+			dtor++) {
+		(*dtor)();
+	}
+}
+
 static TEE_Result init_instance(void)
 {
 	trace_set_level(tahead_get_trace_level());
 	__utee_gprof_init();
 	malloc_add_pool(ta_heap, ta_heap_size);
 	_TEE_MathAPI_Init();
+	call_constructors();
 	return TA_CreateEntryPoint();
 }
 
@@ -61,6 +100,7 @@ static void uninit_instance(void)
 {
 	__utee_gprof_fini();
 	TA_DestroyEntryPoint();
+	call_destructors();
 }
 
 static void ta_header_save_params(uint32_t param_types,

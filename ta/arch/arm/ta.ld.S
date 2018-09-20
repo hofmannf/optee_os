@@ -49,6 +49,21 @@ SECTIONS {
 		*(.gnu.linkonce.r.*)
 		*(.rodata .rodata.*)
 	}
+
+	.init_array : {
+		. = ALIGN(8);
+		__init_array_start = .;
+		*(SORT_BY_INIT_PRIORITY(.init_array.*))
+		__init_array_end = .;
+	}
+
+	.fini_array : {
+		. = ALIGN(8);
+		__fini_array_start = .;
+		*(SORT_BY_INIT_PRIORITY(.fini_array.*))
+		__fini_array_end = .;
+	}
+
 	/* .ARM.exidx is sorted, so has to go in its own output section.  */
 	.ARM.exidx : { *(.ARM.exidx* .gnu.linkonce.armexidx.*) }
         .ctors : { *(.ctors) }
