@@ -7,6 +7,7 @@
 #include <kernel/linker.h>
 #include <kernel/panic.h>
 #include <kernel/pseudo_ta.h>
+#include <kernel/task.h>
 #include <kernel/tee_ta_manager.h>
 #include <mm/core_memprot.h>
 #include <mm/mobj.h>

@@ -4,6 +4,7 @@
  */
 #include <kernel/msg_param.h>
 #include <kernel/pseudo_ta.h>
+#include <kernel/task.h>
 #include <kernel/user_ta.h>
 #include <pta_system.h>
 #include <crypto/crypto.h>

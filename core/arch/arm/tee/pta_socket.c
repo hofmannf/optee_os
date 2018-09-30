@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <mm/mobj.h>
 #include <kernel/pseudo_ta.h>
+#include <kernel/task.h>
 #include <kernel/msg_param.h>
 #include <optee_msg.h>
 #include <optee_msg_supplicant.h>

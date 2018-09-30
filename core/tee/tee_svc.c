@@ -3,6 +3,7 @@
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
 #include <util.h>
+#include <kernel/task.h>
 #include <kernel/tee_common_otp.h>
 #include <kernel/tee_common.h>
 #include <tee_api_types.h>

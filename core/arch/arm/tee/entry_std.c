@@ -12,6 +12,7 @@
 #include <kernel/linker.h>
 #include <kernel/msg_param.h>
 #include <kernel/panic.h>
+#include <kernel/task.h>
 #include <kernel/tee_misc.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>

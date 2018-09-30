@@ -10,6 +10,7 @@
 #include <initcall.h>
 #include <keep.h>
 #include <kernel/panic.h>
+#include <kernel/task.h>
 #include <kernel/tee_misc.h>
 #include <kernel/tee_ta_manager.h>
 #include <kernel/thread.h>
