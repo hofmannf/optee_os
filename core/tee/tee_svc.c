@@ -754,6 +754,7 @@ TEE_Result syscall_open_ta_session(const TEE_UUID *dest,
 	TEE_Identity *clnt_id = malloc(sizeof(TEE_Identity));
 	void *tmp_buf_va[TEE_NUM_PARAMS];
 	struct user_ta_ctx *utc;
+	struct task *child_task;
 
 	if (uuid == NULL || param == NULL || clnt_id == NULL) {
 		res = TEE_ERROR_OUT_OF_MEMORY;
@@ -779,8 +780,15 @@ TEE_Result syscall_open_ta_session(const TEE_UUID *dest,
 	if (res != TEE_SUCCESS)
 		goto function_exit;
 
+	res = task_begin(false, &child_task);
+	if (res != TEE_SUCCESS)
+		goto function_exit;
+
 	res = tee_ta_open_session(&ret_o, &s, &utc->open_sessions, uuid,
 				  clnt_id, cancel_req_to, param);
+
+	task_end(false, child_task);
+
 	tee_mmu_set_ctx(&utc->ctx);
 	if (res != TEE_SUCCESS)
 		goto function_exit;
@@ -807,6 +815,7 @@ TEE_Result syscall_close_ta_session(unsigned long ta_sess)
 	TEE_Identity clnt_id;
 	struct tee_ta_session *s = tee_svc_uref_to_kaddr(ta_sess);
 	struct user_ta_ctx *utc;
+	struct task *child_task;
 
 	res = tee_ta_get_current_session(&sess);
 	if (res != TEE_SUCCESS)
@@ -816,7 +825,15 @@ TEE_Result syscall_close_ta_session(unsigned long ta_sess)
 	clnt_id.login = TEE_LOGIN_TRUSTED_APP;
 	memcpy(&clnt_id.uuid, &sess->ctx->uuid, sizeof(TEE_UUID));
 
-	return tee_ta_close_session(s, &utc->open_sessions, &clnt_id);
+	res = task_begin(false, &child_task);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	res = tee_ta_close_session(s, &utc->open_sessions, &clnt_id);
+
+	task_end(false, child_task);
+
+	return res;
 }
 
 TEE_Result syscall_invoke_ta_command(unsigned long ta_sess,
@@ -833,6 +850,7 @@ TEE_Result syscall_invoke_ta_command(unsigned long ta_sess,
 	struct mobj *mobj_param = NULL;
 	void *tmp_buf_va[TEE_NUM_PARAMS];
 	struct user_ta_ctx *utc;
+	struct task *child_task;
 
 	res = tee_ta_get_current_session(&sess);
 	if (res != TEE_SUCCESS)
@@ -853,8 +871,14 @@ TEE_Result syscall_invoke_ta_command(unsigned long ta_sess,
 	if (res != TEE_SUCCESS)
 		goto function_exit;
 
+	res = task_begin(false, &child_task);
+	if (res != TEE_SUCCESS)
+		goto function_exit;
+
 	res = tee_ta_invoke_command(&ret_o, called_sess, &clnt_id,
 				    cancel_req_to, cmd_id, &param);
+
+	task_end(false, child_task);
 
 	res2 = tee_svc_update_out_param(sess, called_sess, &param, tmp_buf_va,
 					usr_param);
@@ -945,46 +969,28 @@ TEE_Result tee_svc_copy_kaddr_to_uref(uint32_t *uref, void *kaddr)
 
 TEE_Result syscall_get_cancellation_flag(uint32_t *cancel)
 {
-	TEE_Result res;
-	struct tee_ta_session *s = NULL;
 	uint32_t c;
 
-	res = tee_ta_get_current_session(&s);
-	if (res != TEE_SUCCESS)
-		return res;
-
-	c = tee_ta_session_is_cancelled(s, NULL);
+	c = (uint32_t)task_is_cancelled(NULL);
 
 	return tee_svc_copy_to_user(cancel, &c, sizeof(c));
 }
 
 TEE_Result syscall_unmask_cancellation(uint32_t *old_mask)
 {
-	TEE_Result res;
-	struct tee_ta_session *s = NULL;
 	uint32_t m;
 
-	res = tee_ta_get_current_session(&s);
-	if (res != TEE_SUCCESS)
-		return res;
+	m = (uint32_t)task_set_cancellation_mask(false);
 
-	m = s->cancel_mask;
-	s->cancel_mask = false;
 	return tee_svc_copy_to_user(old_mask, &m, sizeof(m));
 }
 
 TEE_Result syscall_mask_cancellation(uint32_t *old_mask)
 {
-	TEE_Result res;
-	struct tee_ta_session *s = NULL;
 	uint32_t m;
 
-	res = tee_ta_get_current_session(&s);
-	if (res != TEE_SUCCESS)
-		return res;
+	m = (uint32_t)task_set_cancellation_mask(true);
 
-	m = s->cancel_mask;
-	s->cancel_mask = true;
 	return tee_svc_copy_to_user(old_mask, &m, sizeof(m));
 }
 
@@ -992,13 +998,8 @@ TEE_Result syscall_wait(unsigned long timeout)
 {
 	TEE_Result res = TEE_SUCCESS;
 	uint32_t mytime = 0;
-	struct tee_ta_session *s;
 	TEE_Time base_time;
 	TEE_Time current_time;
-
-	res = tee_ta_get_current_session(&s);
-	if (res != TEE_SUCCESS)
-		return res;
 
 	res = tee_time_get_sys_time(&base_time);
 	if (res != TEE_SUCCESS)
@@ -1009,7 +1010,7 @@ TEE_Result syscall_wait(unsigned long timeout)
 		if (res != TEE_SUCCESS)
 			return res;
 
-		if (tee_ta_session_is_cancelled(s, &current_time))
+		if (task_is_cancelled(&current_time))
 			return TEE_ERROR_CANCEL;
 
 		mytime = (current_time.seconds - base_time.seconds) * 1000 +

@@ -5,6 +5,7 @@
 
 #include <kernel/misc.h>
 #include <kernel/pseudo_ta.h>
+#include <kernel/task.h>
 #include <mm/core_memprot.h>
 #include <mm/tee_mmu.h>
 #include <sdp_pta.h>
@@ -28,7 +29,7 @@ static TEE_Result sdp_pa_cmd_virt_to_phys(uint32_t types,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	s = tee_ta_get_calling_session();
+	s = task_get_calling_session();
 	if (!s)
 		return TEE_ERROR_ACCESS_DENIED;
 
@@ -58,7 +59,7 @@ static TEE_Result open_session(uint32_t nParamTypes __unused,
 			       TEE_Param pParams[TEE_NUM_PARAMS] __unused,
 			       void **ppSessionContext __unused)
 {
-	struct tee_ta_session *s = tee_ta_get_calling_session();
+	struct tee_ta_session *s = task_get_calling_session();
 
 	if (s && (s->ctx->flags & TA_FLAG_SECURE_DATA_PATH)) {
 		DMSG("open entry point for pseudo-TA \"%s\"", PTA_NAME);

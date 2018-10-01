@@ -65,7 +65,8 @@ struct thread_vector_table {
 extern struct thread_vector_table thread_vector_table;
 
 struct thread_specific_data {
-	TAILQ_HEAD(, tee_ta_session) sess_stack;
+	SLIST_HEAD(, task) task_stack;
+	struct tee_ta_session *task_current_session;
 	struct tee_ta_ctx *ctx;
 	struct pgt_cache pgt_cache;
 	void *rpc_fs_payload;

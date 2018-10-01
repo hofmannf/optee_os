@@ -365,7 +365,7 @@ TEE_Result tee_ta_close_session(struct tee_ta_session *csess,
 	tee_ta_set_busy(ctx);
 
 	if (!ctx->panicked) {
-		set_invoke_timeout(sess, TEE_TIMEOUT_INFINITE);
+		task_set_timeout(TEE_TIMEOUT_INFINITE);
 		ctx->ops->enter_close_session(sess);
 	}
 
@@ -441,7 +441,6 @@ static TEE_Result tee_ta_init_session(TEE_ErrorOrigin *err,
 	if (!s)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
-	s->cancel_mask = true;
 	condvar_init(&s->refc_cv);
 	condvar_init(&s->lock_cv);
 	s->lock_thread = THREAD_ID_INVALID;
@@ -522,7 +521,7 @@ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err,
 	s->clnt_id = *clnt_id;
 
 	if (tee_ta_try_set_busy(ctx)) {
-		set_invoke_timeout(s, cancel_req_to);
+		task_set_timeout(cancel_req_to);
 		res = ctx->ops->enter_open_session(s, param, err);
 		tee_ta_clear_busy(ctx);
 	} else {
@@ -574,7 +573,7 @@ TEE_Result tee_ta_invoke_command(TEE_ErrorOrigin *err,
 
 	tee_ta_set_busy(sess->ctx);
 
-	set_invoke_timeout(sess, cancel_req_to);
+	task_set_timeout(cancel_req_to);
 	res = sess->ctx->ops->enter_invoke_cmd(sess, cmd, param, err);
 
 	if (sess->ctx->panicked) {

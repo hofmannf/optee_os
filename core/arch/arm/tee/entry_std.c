@@ -500,6 +500,7 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 	struct optee_msg_arg *arg = NULL;	/* fix gcc warning */
 	uint32_t num_params = 0;		/* fix gcc warning */
 	struct mobj *mobj;
+	struct task *task = NULL;
 
 	if (smc_args->a0 != OPTEE_SMC_CALL_WITH_ARG) {
 		EMSG("Unknown SMC 0x%" PRIx64, (uint64_t)smc_args->a0);
@@ -524,12 +525,28 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 	if (!mobj || !ALIGNMENT_IS_OK(parg, struct optee_msg_arg)) {
 		EMSG("Bad arg address 0x%" PRIxPA, parg);
 		smc_args->a0 = OPTEE_SMC_RETURN_EBADADDR;
-		mobj_free(mobj);
-		return;
+
+		goto out;
 	}
 
 	arg = mobj_get_va(mobj, 0);
 	assert(arg && mobj_is_nonsec(mobj));
+
+	/* Begin new task if necessary. */
+	if (arg->cmd == OPTEE_MSG_CMD_OPEN_SESSION
+			|| arg->cmd == OPTEE_MSG_CMD_INVOKE_COMMAND
+			|| arg->cmd == OPTEE_MSG_CMD_CLOSE_SESSION) {
+		TEE_Result res;
+
+		res = task_begin(true, &task);
+		if (res != TEE_SUCCESS) {
+			smc_args->a0 = OPTEE_SMC_RETURN_OK;
+			arg->ret = res;
+			arg->ret_origin = TEE_ORIGIN_TEE;
+
+			goto out;
+		}
+	}
 
 	/* Enable foreign interrupts for STD calls */
 	thread_set_foreign_intr(true);
@@ -557,6 +574,11 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 		EMSG("Unknown cmd 0x%x\n", arg->cmd);
 		smc_args->a0 = OPTEE_SMC_RETURN_EBADCMD;
 	}
+
+out:
+	if (task != NULL)
+		task_end(true, task);
+
 	mobj_free(mobj);
 }
 

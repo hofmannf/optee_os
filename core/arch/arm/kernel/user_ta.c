@@ -288,7 +288,7 @@ static TEE_Result user_ta_enter(TEE_ErrorOrigin *err,
 		goto cleanup_return;
 
 	/* Switch to user ctx */
-	tee_ta_push_current_session(session);
+	task_set_session(session);
 
 	/* Make room for usr_params at top of stack */
 	usr_stack = utc->stack_addr + utc->mobj_stack->size;
@@ -318,16 +318,9 @@ static TEE_Result user_ta_enter(TEE_ErrorOrigin *err,
 	/* Copy out value results */
 	update_from_utee_param(param, usr_params);
 
-	s = tee_ta_pop_current_session();
+	s = task_unset_session();
 	assert(s == session);
 cleanup_return:
-
-	/*
-	 * Clear the cancel state now that the user TA has returned. The next
-	 * time the TA will be invoked will be with a new operation and should
-	 * not have an old cancellation pending.
-	 */
-	session->cancel = false;
 
 	/*
 	 * Can't update *err until now since it may point to an address

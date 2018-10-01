@@ -262,7 +262,7 @@ static TEE_Result pta_socket_open_session(uint32_t param_types __unused,
 	struct tee_ta_session *s;
 
 	/* Check that we're called from a TA */
-	s = tee_ta_get_calling_session();
+	s = task_get_calling_session();
 	if (!s)
 		return TEE_ERROR_ACCESS_DENIED;
 

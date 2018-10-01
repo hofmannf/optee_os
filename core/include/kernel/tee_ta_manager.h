@@ -89,12 +89,8 @@ struct tee_ta_ctx {
 
 struct tee_ta_session {
 	TAILQ_ENTRY(tee_ta_session) link;
-	TAILQ_ENTRY(tee_ta_session) link_tsd;
 	struct tee_ta_ctx *ctx;	/* TA context */
 	TEE_Identity clnt_id;	/* Identify of client */
-	bool cancel;		/* True if TAF is cancelled */
-	bool cancel_mask;	/* True if cancel is masked */
-	TEE_Time cancel_time;	/* Time when to cancel the TAF */
 	void *user_ctx;		/* ??? */
 	uint32_t ref_count;	/* reference counter */
 	struct condvar refc_cv;	/* CV used to wait for ref_count to be 0 */

@@ -13,19 +13,22 @@
 #include <stdint.h>
 #include <tee_api_types.h>
 
-void tee_ta_push_current_session(struct tee_ta_session *sess);
-struct tee_ta_session *tee_ta_pop_current_session(void);
+struct task;
 
-TEE_Result task_get_session(struct tee_ta_session **sess);
+/* task_begin() and task_end() must be called in matched pairs. */
+TEE_Result task_begin(bool top_level_task, struct task **out_task);
+void task_end(bool top_level_task, struct task *task);
 
-struct tee_ta_session *tee_ta_get_calling_session(void);
+/* task_set_session() and task_unset_session() must be called in matched pairs.
+ */
+void task_set_session(struct tee_ta_session *session);
+struct tee_ta_session *task_unset_session(void);
+TEE_Result task_get_session(struct tee_ta_session **out_sess);
+struct tee_ta_session *task_get_calling_session(void);
+bool task_set_cancellation_mask(bool mask);
+void task_set_timeout(uint32_t timeout);
+bool task_is_cancelled(TEE_Time *curr_time);
 
-void set_invoke_timeout(struct tee_ta_session *sess, uint32_t cancel_req_to);
-
-bool tee_ta_session_is_cancelled(struct tee_ta_session *s, TEE_Time *curr_time);
-
-TEE_Result tee_ta_cancel_command(TEE_ErrorOrigin *err,
-				 struct tee_ta_session *sess,
-				 const TEE_Identity *clnt_id);
+void task_cancel(struct task *task);
 
 #endif

@@ -8,6 +8,7 @@
 #include <kernel/msg_param.h>
 #include <kernel/pseudo_ta.h>
 #include <kernel/user_ta.h>
+#include <kernel/task.h>
 #include <kernel/thread.h>
 #include <mm/core_memprot.h>
 #include <mm/mobj.h>
@@ -162,7 +163,7 @@ static TEE_Result open_session(uint32_t param_types __unused,
 	struct tee_ta_session *s;
 
 	/* Check that we're called from a user TA */
-	s = tee_ta_get_calling_session();
+	s = task_get_calling_session();
 	if (!s)
 		return TEE_ERROR_ACCESS_DENIED;
 	if (!is_user_ta_ctx(s->ctx))
@@ -175,7 +176,7 @@ static TEE_Result invoke_command(void *sess_ctx __unused, uint32_t cmd_id,
 				 uint32_t param_types,
 				 TEE_Param params[TEE_NUM_PARAMS])
 {
-	struct tee_ta_session *s = tee_ta_get_calling_session();
+	struct tee_ta_session *s = task_get_calling_session();
 
 	switch (cmd_id) {
 	case PTA_GPROF_SEND:

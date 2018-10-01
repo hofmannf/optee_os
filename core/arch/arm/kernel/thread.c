@@ -398,8 +398,9 @@ void thread_init_boot_thread(void)
 
 	for (n = 0; n < CFG_NUM_THREADS; n++) {
 		TAILQ_INIT(&threads[n].mutexes);
-		TAILQ_INIT(&threads[n].tsd.sess_stack);
+		SLIST_INIT(&threads[n].tsd.task_stack);
 		SLIST_INIT(&threads[n].tsd.pgt_cache);
+		threads[n].tsd.task_current_session = NULL;
 	}
 
 	for (n = 0; n < CFG_TEE_CORE_NB_CORE; n++)
