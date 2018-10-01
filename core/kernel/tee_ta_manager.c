@@ -364,10 +364,8 @@ TEE_Result tee_ta_close_session(struct tee_ta_session *csess,
 
 	tee_ta_set_busy(ctx);
 
-	if (!ctx->panicked) {
-		task_set_timeout(TEE_TIMEOUT_INFINITE);
+	if (!ctx->panicked)
 		ctx->ops->enter_close_session(sess);
-	}
 
 	tee_ta_unlink_session(sess, open_sessions);
 #if defined(CFG_TA_GPROF_SUPPORT)
@@ -489,7 +487,6 @@ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err,
 			       struct tee_ta_session_head *open_sessions,
 			       const TEE_UUID *uuid,
 			       const TEE_Identity *clnt_id,
-			       uint32_t cancel_req_to,
 			       struct tee_ta_param *param)
 {
 	TEE_Result res;
@@ -521,7 +518,6 @@ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err,
 	s->clnt_id = *clnt_id;
 
 	if (tee_ta_try_set_busy(ctx)) {
-		task_set_timeout(cancel_req_to);
 		res = ctx->ops->enter_open_session(s, param, err);
 		tee_ta_clear_busy(ctx);
 	} else {
@@ -554,7 +550,7 @@ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err,
 TEE_Result tee_ta_invoke_command(TEE_ErrorOrigin *err,
 				 struct tee_ta_session *sess,
 				 const TEE_Identity *clnt_id,
-				 uint32_t cancel_req_to, uint32_t cmd,
+				 uint32_t cmd,
 				 struct tee_ta_param *param)
 {
 	TEE_Result res;
@@ -573,7 +569,6 @@ TEE_Result tee_ta_invoke_command(TEE_ErrorOrigin *err,
 
 	tee_ta_set_busy(sess->ctx);
 
-	task_set_timeout(cancel_req_to);
 	res = sess->ctx->ops->enter_invoke_cmd(sess, cmd, param, err);
 
 	if (sess->ctx->panicked) {

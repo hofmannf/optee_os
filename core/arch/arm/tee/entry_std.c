@@ -309,7 +309,7 @@ static void entry_open_session(struct thread_smc_args *smc_args,
 		goto cleanup_shm_refs;
 
 	res = tee_ta_open_session(&err_orig, &s, &tee_open_sessions, &uuid,
-				  &clnt_id, TEE_TIMEOUT_INFINITE, &param);
+				  &clnt_id, &param);
 	if (res != TEE_SUCCESS)
 		s = NULL;
 	copy_out_param(&param, num_params - num_meta, arg->params + num_meta,
@@ -382,7 +382,7 @@ static void entry_invoke_command(struct thread_smc_args *smc_args,
 	}
 
 	res = tee_ta_invoke_command(&err_orig, s, NSAPP_IDENTITY,
-				    TEE_TIMEOUT_INFINITE, arg->func, &param);
+				    arg->func, &param);
 
 	bm_timestamp();
 

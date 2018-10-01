@@ -784,8 +784,11 @@ TEE_Result syscall_open_ta_session(const TEE_UUID *dest,
 	if (res != TEE_SUCCESS)
 		goto function_exit;
 
+	if (cancel_req_to != TEE_TIMEOUT_INFINITE)
+		task_set_timeout(cancel_req_to);
+
 	res = tee_ta_open_session(&ret_o, &s, &utc->open_sessions, uuid,
-				  clnt_id, cancel_req_to, param);
+				  clnt_id, param);
 
 	task_end(false, child_task);
 
@@ -875,8 +878,11 @@ TEE_Result syscall_invoke_ta_command(unsigned long ta_sess,
 	if (res != TEE_SUCCESS)
 		goto function_exit;
 
+	if (cancel_req_to != TEE_TIMEOUT_INFINITE)
+		task_set_timeout(cancel_req_to);
+
 	res = tee_ta_invoke_command(&ret_o, called_sess, &clnt_id,
-				    cancel_req_to, cmd_id, &param);
+				    cmd_id, &param);
 
 	task_end(false, child_task);
 
