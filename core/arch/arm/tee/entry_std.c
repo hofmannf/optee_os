@@ -11,9 +11,12 @@
 #include <io.h>
 #include <kernel/linker.h>
 #include <kernel/msg_param.h>
+#include <kernel/mutex.h>
 #include <kernel/panic.h>
 #include <kernel/task.h>
 #include <kernel/tee_misc.h>
+#include <kernel/tee_time.h>
+#include <kernel/thread.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
 #include <mm/mobj.h>
@@ -28,6 +31,17 @@
 #define SHM_CACHE_ATTRS	\
 	(uint32_t)(core_mmu_is_shm_cached() ?  OPTEE_SMC_SHM_CACHED : 0)
 
+/* Cancellation related constants: */
+/* Keep a buffer of at most this many cancellation requests that refer to a
+ * task that is not currently registered. This is to properly handle
+ * cancellation requests that arrive before the corresponding task is actually
+ * registered.
+ * TODO: Convert this into an actual configuration value.
+ */
+#define CFG_MAX_PENDING_CANCELLATIONS 5
+/* Discard pending cancellation requests after this many seconds. */
+#define CANCELLATION_TIMEOUT_SECONDS 2
+
 /* Sessions opened from normal world */
 static struct tee_ta_session_head tee_open_sessions =
 TAILQ_HEAD_INITIALIZER(tee_open_sessions);
@@ -38,6 +52,253 @@ static struct mobj **sdp_mem_mobjs;
 #endif
 
 static unsigned int session_pnum;
+
+/* Cancellation-related types: */
+struct cancel_info {
+	uint32_t context_id;
+	uint32_t cancel_id;
+};
+
+struct pending_cancellation {
+	bool used;
+	struct cancel_info cancel_info;
+	TEE_Time timestamp;
+};
+
+struct registered_task {
+	bool used;
+	struct task *task;
+	uint32_t session;
+	struct cancel_info cancel_info;
+};
+
+enum registration_result { REGISTERED, NOT_NEEDED, CANCEL };
+
+/* Cancellation-related local variables: */
+static struct registered_task registered_tasks[CFG_NUM_THREADS];
+static struct pending_cancellation cancellations[CFG_MAX_PENDING_CANCELLATIONS];
+static struct mutex cancel_mutex = MUTEX_INITIALIZER;
+
+/* Cancellation-related local functions: */
+static bool match_cancel_info(const struct cancel_info info,
+		const struct optee_msg_arg *arg)
+{
+	return info.context_id == arg->context_id
+		&& info.cancel_id == arg->cancel_id;
+}
+
+static bool cancellation_expired(const struct pending_cancellation *pend,
+		TEE_Time now)
+{
+	uint32_t thresh;
+
+	if (SUB_OVERFLOW(now.seconds, CANCELLATION_TIMEOUT_SECONDS, &thresh))
+		return true;
+
+	if (pend->timestamp.seconds < thresh)
+		return true;
+	else if (pend->timestamp.seconds == thresh)
+		return pend->timestamp.millis < now.millis;
+	else
+		return false;
+}
+
+static bool try_remove_pending_cancellation(const struct optee_msg_arg *arg)
+{
+	/* cancel_mutex must be held when calling this function. */
+	for (size_t i = 0; i < CFG_MAX_PENDING_CANCELLATIONS; i++) {
+		struct pending_cancellation *pend = &cancellations[i];
+
+		if (pend->used && match_cancel_info(pend->cancel_info, arg)) {
+			pend->used = false;
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static enum registration_result register_task_per_task(struct task *task,
+		const struct optee_msg_arg *arg)
+{
+	int tid;
+	enum registration_result res;
+	bool prev_used = false;
+
+	if (arg->cancel_id == 0)
+		return NOT_NEEDED;
+
+	tid = thread_get_id();
+
+	mutex_lock(&cancel_mutex);
+	if (try_remove_pending_cancellation(arg)) {
+		/* The task was cancelled before it was registered. */
+		res = CANCEL;
+	} else {
+		/* No cancellation pending, register the task. */
+		struct registered_task *reg = &registered_tasks[tid];
+
+		reg->task = task;
+		reg->cancel_info.context_id = arg->context_id;
+		reg->cancel_info.cancel_id = arg->cancel_id;
+		reg->session = 0;
+		prev_used = reg->used;
+		reg->used = true;
+
+		res = REGISTERED;
+	}
+	mutex_unlock(&cancel_mutex);
+
+	assert(!prev_used);
+
+	return res;
+}
+
+static enum registration_result register_task_per_session(struct task *task,
+		const struct optee_msg_arg *arg)
+{
+	int tid = thread_get_id();
+	bool prev_used;
+	struct registered_task *reg = &registered_tasks[tid];
+
+	mutex_lock(&cancel_mutex);
+	reg->task = task;
+	reg->cancel_info.context_id = 0;
+	reg->cancel_info.cancel_id = 0;
+	reg->session = arg->session;
+	prev_used = reg->used;
+	reg->used = true;
+	mutex_unlock(&cancel_mutex);
+
+	assert(!prev_used);
+
+	return REGISTERED;
+}
+
+static enum registration_result register_cancellable_task(struct task *task,
+		const struct optee_msg_arg *arg)
+{
+	assert(task != NULL);
+	assert(arg != NULL);
+
+	if (arg->context_id != 0) {
+		/* new-style per-task cancellations */
+		return register_task_per_task(task, arg);
+	} else if (arg->session != 0) {
+		/* old-style per-session cancellations */
+		return register_task_per_session(task, arg);
+	} else {
+		return NOT_NEEDED;
+	}
+}
+
+static void unregister_cancellable_task(struct task *task)
+{
+	int tid = thread_get_id();
+	bool prev_used;
+	struct task *prev_task;
+
+	assert(task != NULL);
+
+	mutex_lock(&cancel_mutex);
+	prev_used = registered_tasks[tid].used;
+	registered_tasks[tid].used = false;
+	prev_task = registered_tasks[tid].task;
+	registered_tasks[tid].task = NULL;
+	mutex_unlock(&cancel_mutex);
+
+	assert(prev_used);
+	assert(prev_task == task);
+}
+
+static TEE_Result cancel_request_per_task(const struct optee_msg_arg *arg)
+{
+	TEE_Result res;
+	TEE_Time now;
+	struct pending_cancellation *pend;
+	int free_slot;
+
+	res = tee_time_get_sys_time(&now);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	mutex_lock(&cancel_mutex);
+
+	/* First: Check if a matching task is currently registered. */
+	for (size_t i = 0; i < CFG_NUM_THREADS; i++) {
+		struct registered_task *reg = &registered_tasks[i];
+
+		if (reg->used && match_cancel_info(reg->cancel_info, arg)) {
+			task_cancel(reg->task);
+			res = TEE_SUCCESS;
+
+			goto out;
+		}
+	}
+
+	/* Otherwise: Check if there's already a pending cancellation. */
+	free_slot = -1;
+	for (size_t i = 0; i < CFG_MAX_PENDING_CANCELLATIONS; i++) {
+		pend = &cancellations[i];
+
+		if (pend->used) {
+			if (match_cancel_info(pend->cancel_info, arg)) {
+				pend->timestamp = now;
+				res = TEE_SUCCESS;
+
+				goto out;
+			} else if (cancellation_expired(pend, now)) {
+				/* Use the opportunity to do some garbage
+				 * collection.
+				 */
+				pend->used = false;
+			}
+		} else {
+			free_slot = i;
+		}
+	}
+
+	/* Last option: Add a new pending cancellation. */
+	if (free_slot == -1) {
+		/* All pending cancellation slots in use. */
+		res = TEE_ERROR_BUSY;
+
+		goto out;
+	}
+
+	pend = &cancellations[free_slot];
+	pend->cancel_info.context_id = arg->context_id;
+	pend->cancel_info.cancel_id = arg->cancel_id;
+	pend->timestamp = now;
+	pend->used = true;
+
+	res = TEE_SUCCESS;
+
+out:
+	mutex_unlock(&cancel_mutex);
+
+	return res;
+}
+
+static TEE_Result cancel_request_per_session(const struct optee_msg_arg *arg)
+{
+	TEE_Result res = TEE_ERROR_BAD_PARAMETERS;
+
+	mutex_lock(&cancel_mutex);
+	for (size_t i = 0; i < CFG_NUM_THREADS; i++) {
+		struct registered_task *reg = &registered_tasks[i];
+
+		if (reg->used && reg->session == arg->session) {
+			task_cancel(reg->task);
+			res = TEE_SUCCESS;
+		}
+	}
+	mutex_unlock(&cancel_mutex);
+
+	return res;
+}
+/* End of cancellation-related functions. */
 
 static bool param_mem_from_mobj(struct param_mem *mem, struct mobj *mobj,
 				const paddr_t pa, const size_t sz)
@@ -401,7 +662,28 @@ out:
 static void entry_cancel(struct thread_smc_args *smc_args,
 			struct optee_msg_arg *arg, uint32_t num_params)
 {
-	arg->ret = TEE_ERROR_NOT_IMPLEMENTED;
+	TEE_Result res;
+
+	if (num_params) {
+		res = TEE_ERROR_BAD_PARAMETERS;
+		goto out;
+	}
+
+	if (arg->context_id != 0) {
+		/* new-style per-task cancellations */
+		if (arg->cancel_id != 0)
+			res = cancel_request_per_task(arg);
+		else
+			res = TEE_ERROR_BAD_PARAMETERS;
+	} else if (arg->session != 0) {
+		/* old-style per-session cancellations */
+		res = cancel_request_per_session(arg);
+	} else {
+		res = TEE_ERROR_BAD_PARAMETERS;
+	}
+
+out:
+	arg->ret = res;
 	arg->ret_origin = TEE_ORIGIN_TEE;
 	smc_args->a0 = OPTEE_SMC_RETURN_OK;
 }
@@ -496,11 +778,14 @@ static struct mobj *get_cmd_buffer(paddr_t parg, uint32_t *num_params)
  */
 void __weak tee_entry_std(struct thread_smc_args *smc_args)
 {
+	/* TODO: this function has become too long, split it up */
 	paddr_t parg;
 	struct optee_msg_arg *arg = NULL;	/* fix gcc warning */
 	uint32_t num_params = 0;		/* fix gcc warning */
 	struct mobj *mobj;
+	enum registration_result reg_res = NOT_NEEDED;
 	struct task *task = NULL;
+
 
 	if (smc_args->a0 != OPTEE_SMC_CALL_WITH_ARG) {
 		EMSG("Unknown SMC 0x%" PRIx64, (uint64_t)smc_args->a0);
@@ -546,7 +831,25 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 
 			goto out;
 		}
+
+		/* Additionally, OpenSession and InvokeCommand are cancellable
+		 * commands and have to be registered.
+		 */
+		if (arg->cmd != OPTEE_MSG_CMD_CLOSE_SESSION) {
+			reg_res = register_cancellable_task(task, arg);
+			if (reg_res == CANCEL) {
+				/* The task had a pending cancellation request
+				 * and must not be executed.
+				 */
+				smc_args->a0 = OPTEE_SMC_RETURN_OK;
+				arg->ret = TEE_ERROR_CANCEL;
+				arg->ret_origin = TEE_ORIGIN_TEE;
+
+				goto out;
+			}
+		}
 	}
+
 
 	/* Enable foreign interrupts for STD calls */
 	thread_set_foreign_intr(true);
@@ -576,6 +879,9 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 	}
 
 out:
+	if (reg_res == REGISTERED)
+		unregister_cancellable_task(task);
+
 	if (task != NULL)
 		task_end(true, task);
 

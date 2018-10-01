@@ -187,7 +187,7 @@ struct optee_msg_arg {
 	uint32_t func;
 	uint32_t session;
 	uint32_t cancel_id;
-	uint32_t pad;
+	uint32_t context_id;
 	uint32_t ret;
 	uint32_t ret_origin;
 	uint32_t num_params;

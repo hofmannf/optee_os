@@ -269,6 +269,8 @@
 #define OPTEE_SMC_SEC_CAP_HAVE_RESERVED_SHM	(1 << 0)
 /* Secure world can communicate via previously unregistered shared memory */
 #define OPTEE_SMC_SEC_CAP_UNREGISTERED_SHM	(1 << 1)
+/* Secure world supports context ids */
+#define OPTEE_SMC_SEC_CAP_CONTEXT_ID		(1 << 3)
 
 /*
  * Secure world supports commands "register/unregister shared memory",
