@@ -296,6 +296,9 @@ struct optee_msg_arg {
  * [in] param[0].u.rmem.shm_ref		holds shared memory reference
  * [in] param[0].u.rmem.offs		0
  * [in] param[0].u.rmem.size		0
+ *
+ * OPTEE_MSG_CMD_INVALIDATE_CANCELLATIONS removes all pending cancellations
+ * that are associated with a given context_id.
  */
 #define OPTEE_MSG_CMD_OPEN_SESSION	0
 #define OPTEE_MSG_CMD_INVOKE_COMMAND	1
@@ -303,6 +306,7 @@ struct optee_msg_arg {
 #define OPTEE_MSG_CMD_CANCEL		3
 #define OPTEE_MSG_CMD_REGISTER_SHM	4
 #define OPTEE_MSG_CMD_UNREGISTER_SHM	5
+#define OPTEE_MSG_CMD_INVALIDATE_CANCELLATIONS	6
 #define OPTEE_MSG_FUNCID_CALL_WITH_ARG	0x0004
 
 /*****************************************************************************

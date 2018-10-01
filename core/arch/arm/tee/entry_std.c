@@ -119,6 +119,20 @@ static bool try_remove_pending_cancellation(const struct optee_msg_arg *arg)
 	return false;
 }
 
+static void invalidate_pending_cancellations(uint32_t context_id)
+{
+	assert(context_id != 0);
+
+	mutex_lock(&cancel_mutex);
+	for (size_t i = 0; i < CFG_MAX_PENDING_CANCELLATIONS; i++) {
+		struct pending_cancellation *pend = &cancellations[i];
+
+		if (pend->used && pend->cancel_info.context_id == context_id)
+			pend->used = false;
+	}
+	mutex_unlock(&cancel_mutex);
+}
+
 static enum registration_result register_task_per_task(struct task *task,
 		const struct optee_msg_arg *arg)
 {
@@ -688,6 +702,25 @@ out:
 	smc_args->a0 = OPTEE_SMC_RETURN_OK;
 }
 
+static void entry_invalidate_cancellations(struct thread_smc_args *smc_args,
+		struct optee_msg_arg *arg, uint32_t num_params)
+{
+	TEE_Result res = TEE_SUCCESS;
+
+	if (num_params != 0 || arg->context_id == 0) {
+		res = TEE_ERROR_BAD_PARAMETERS;
+
+		goto out;
+	}
+
+	invalidate_pending_cancellations(arg->context_id);
+
+out:
+	arg->ret = res;
+	arg->ret_origin = TEE_ORIGIN_TEE;
+	smc_args->a0 = OPTEE_SMC_RETURN_OK;
+}
+
 static void register_shm(struct thread_smc_args *smc_args,
 			 struct optee_msg_arg *arg, uint32_t num_params)
 {
@@ -871,6 +904,9 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 		break;
 	case OPTEE_MSG_CMD_UNREGISTER_SHM:
 		unregister_shm(smc_args, arg, num_params);
+		break;
+	case OPTEE_MSG_CMD_INVALIDATE_CANCELLATIONS:
+		entry_invalidate_cancellations(smc_args, arg, num_params);
 		break;
 
 	default:
