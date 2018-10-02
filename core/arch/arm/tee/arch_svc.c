@@ -214,6 +214,19 @@ void __weak tee_svc_handler(struct thread_svc_regs *regs)
 
 	set_svc_retval(regs, tee_svc_do_call(regs, scf));
 
+	if (thread_is_killed(thread_get_id())) {
+		/* TODO: Do we need to find out whether we're returning to user
+		 * or to kernel mode? (Is the latter even possible?)
+		 */
+		regs->x1 = true;
+		regs->x2 = 0xdeaf;
+		regs->sp_el0 = (uint64_t)(regs + 1);
+		regs->elr = (uintptr_t)thread_unwind_user_mode;
+		regs->spsr
+			= SPSR_64(SPSR_64_MODE_EL1, SPSR_64_MODE_SP_EL0, 0)
+			  | read_daif();
+	}
+
 	if (scn != TEE_SCN_RETURN) {
 		/* We're about to switch back to user mode */
 		tee_ta_update_session_utime_resume();

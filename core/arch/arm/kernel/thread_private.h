@@ -93,6 +93,7 @@ struct thread_ctx {
 	uint64_t rpc_carg;
 	struct mobj *rpc_mobj;
 	struct mutex_head mutexes;
+	bool killed;
 	struct thread_specific_data tsd;
 };
 #endif /*ASM*/

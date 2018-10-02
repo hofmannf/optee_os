@@ -245,6 +245,7 @@ static TEE_Result cancel_request_per_task(const struct optee_msg_arg *arg)
 
 		if (reg->used && match_cancel_info(reg->cancel_info, arg)) {
 			task_cancel(reg->task);
+			thread_kill(i);
 			res = TEE_SUCCESS;
 
 			goto out;

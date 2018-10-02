@@ -449,6 +449,7 @@ static void thread_alloc_and_run(struct thread_smc_args *args)
 	l->curr_thread = n;
 
 	threads[n].flags = 0;
+	threads[n].killed = false;
 	init_regs(threads + n, args);
 
 	/* Save Hypervisor Client ID */
@@ -555,6 +556,16 @@ static void thread_resume_from_rpc(struct thread_smc_args *args)
 	if (threads[n].flags & THREAD_FLAGS_COPY_ARGS_ON_RETURN) {
 		copy_a0_to_a5(&threads[n].regs, args);
 		threads[n].flags &= ~THREAD_FLAGS_COPY_ARGS_ON_RETURN;
+	}
+
+	if (is_user_mode(&threads[n].regs) && thread_is_killed(n)) {
+		threads[n].regs.x[1] = true;
+		threads[n].regs.x[2] = 0xdead;
+		threads[n].regs.sp = threads[n].kern_sp;
+		threads[n].regs.pc = (uintptr_t)thread_unwind_user_mode;
+		threads[n].regs.cpsr
+			= SPSR_64(SPSR_64_MODE_EL1, SPSR_64_MODE_SP_EL0, 0)
+			  | read_daif();
 	}
 
 	thread_lazy_save_ns_vfp();
@@ -1226,6 +1237,17 @@ static bool get_spsr(bool is_32bit, unsigned long entry_func, uint32_t *spsr)
 	return true;
 }
 #endif
+
+void thread_kill(size_t tid)
+{
+	assert(tid < CFG_NUM_THREADS);
+	__atomic_store_n(&threads[tid].killed, true, __ATOMIC_RELEASE);
+}
+
+bool thread_is_killed(size_t tid)
+{
+	return __atomic_load_n(&threads[tid].killed, __ATOMIC_CONSUME);
+}
 
 uint32_t thread_enter_user_mode(unsigned long a0, unsigned long a1,
 		unsigned long a2, unsigned long a3, unsigned long user_sp,

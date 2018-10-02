@@ -437,6 +437,9 @@ static inline void thread_user_clear_vfp(
 }
 #endif
 
+void thread_kill(size_t tid);
+
+bool thread_is_killed(size_t tid);
 
 /*
  * thread_enter_user_mode() - Enters user mode
