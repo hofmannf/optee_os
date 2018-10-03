@@ -308,7 +308,12 @@ static TEE_Result user_ta_enter(TEE_ErrorOrigin *err,
 	 */
 	serr = TEE_ORIGIN_TRUSTED_APP;
 
-	if (utc->ctx.panicked) {
+	if (utc->ctx.panicked == 2) {
+		DMSG("thread was killed while executing TA, code = 0x%04x",
+				utc->ctx.panic_code);
+		serr = TEE_ORIGIN_TEE;
+		res = TEE_ERROR_EXTERNAL_CANCEL;
+	} else if (utc->ctx.panicked) {
 		DMSG("tee_user_ta_enter: TA panicked with code 0x%x\n",
 		     utc->ctx.panic_code);
 		serr = TEE_ORIGIN_TEE;

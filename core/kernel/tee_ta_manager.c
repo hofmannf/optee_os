@@ -571,7 +571,10 @@ TEE_Result tee_ta_invoke_command(TEE_ErrorOrigin *err,
 
 	res = sess->ctx->ops->enter_invoke_cmd(sess, cmd, param, err);
 
-	if (sess->ctx->panicked) {
+	if (sess->ctx->panicked == 2) {
+		*err = TEE_ORIGIN_TEE;
+		res = TEE_ERROR_EXTERNAL_CANCEL;
+	} else if (sess->ctx->panicked) {
 		*err = TEE_ORIGIN_TEE;
 		res = TEE_ERROR_TARGET_DEAD;
 	}

@@ -559,7 +559,8 @@ static void thread_resume_from_rpc(struct thread_smc_args *args)
 	}
 
 	if (is_user_mode(&threads[n].regs) && thread_is_killed(n)) {
-		threads[n].regs.x[1] = true;
+		EMSG("killing thread %zu on foreign interrupt return", n);
+		threads[n].regs.x[1] = 2;
 		threads[n].regs.x[2] = 0xdead;
 		threads[n].regs.sp = threads[n].kern_sp;
 		threads[n].regs.pc = (uintptr_t)thread_unwind_user_mode;

@@ -181,6 +181,7 @@ void __weak tee_svc_handler(struct thread_svc_regs *regs)
 	size_t max_args;
 	syscall_t scf;
 	uint32_t state;
+	int tid;
 
 	COMPILE_TIME_ASSERT(ARRAY_SIZE(tee_svc_syscall_table) ==
 				(TEE_SCN_MAX + 1));
@@ -214,11 +215,14 @@ void __weak tee_svc_handler(struct thread_svc_regs *regs)
 
 	set_svc_retval(regs, tee_svc_do_call(regs, scf));
 
-	if (thread_is_killed(thread_get_id())) {
+	tid = thread_get_id();
+	if (thread_is_killed(tid)) {
+		EMSG("killing thread %d on SVC return", tid);
+
 		/* TODO: Do we need to find out whether we're returning to user
 		 * or to kernel mode? (Is the latter even possible?)
 		 */
-		regs->x1 = true;
+		regs->x1 = 2;
 		regs->x2 = 0xdeaf;
 		regs->sp_el0 = (uint64_t)(regs + 1);
 		regs->elr = (uintptr_t)thread_unwind_user_mode;
